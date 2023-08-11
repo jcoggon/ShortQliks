@@ -1,0 +1,38 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShortQliks Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>ShortQliks Admin Dashboard</h1>
+    </header>
+    <nav>
+        <!-- Navigation links can go here -->
+        <a href="/">Home</a>
+        <a href="/admin/tasks">Tasks</a>
+    </nav>
+    <main>
+        
+    <!-- Main content of the dashboard will be rendered here -->
+    <section>
+        <h2>Total Tasks: {{ total_tasks_redis }}</h2>
+        <h3>Recent Tasks</h3>
+        <ul>
+        {% for task in recent_tasks_redis %}
+            <li>{{ task.title.decode("utf-8") }} - {{ task.status.decode("utf-8") }}</li>
+        {% endfor %}
+        </ul>
+    </section>
+    
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        ShortQliks &copy; 2023
+    </footer>
+</body>
+</html>

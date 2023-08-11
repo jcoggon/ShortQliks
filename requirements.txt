@@ -1,0 +1,11 @@
+
+fastapi
+uvicorn
+asyncpg
+sqlalchemy
+aioredis
+databases
+redis
+alembic
+
+python-dotenv>=0.15.0
