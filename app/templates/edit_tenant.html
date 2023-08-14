@@ -1,0 +1,24 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Tenant</title>
+</head>
+<body>
+    <h2>Edit Tenant</h2>
+    <form action="/edit-tenant/{{tenant_id}}" method="post">
+        <div>
+            <label for="tenant_name">Tenant Name:</label>
+            <input type="text" id="tenant_name" name="tenant_name" value="{{tenant_name}}" required>
+        </div>
+        <div>
+            <label for="qlik_cloud_key">Qlik Cloud Key:</label>
+            <input type="text" id="qlik_cloud_key" name="qlik_cloud_key" value="{{qlik_cloud_key}}" required>
+        </div>
+        <div>
+            <input type="submit" value="Save Changes">
+        </div>
+    </form>
+    <a href="/dashboard">Back to Dashboard</a>
+</body>
+</html>

@@ -1,36 +1,53 @@
 
 import os
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Load environment variables from .env file
 load_dotenv()
 
-import asyncpg
-import redis
-import asyncio
+from main import UserDB, TenantDB, TaskDB, Base, DATABASE_URL  # Importing the required models
 
-# Dummy data for tasks
-tasks = [
-    {"id": 1, "title": "Setup Qlik Cloud instance", "status": "Pending"},
-    {"id": 2, "title": "Configure user permissions", "status": "Completed"},
-    {"id": 3, "title": "Review usage metrics", "status": "In Progress"}
+# Setting up SQLAlchemy session
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+db = SessionLocal()
+
+# Dummy data for users, tenants, and tasks
+users = [
+    {"email": "user1@example.com", "hashed_password": "examplepassword1"},
+    {"email": "user2@example.com", "hashed_password": "examplepassword2"}
 ]
 
-async def populate_postgres():
-    conn = await asyncpg.connect(user=os.environ.get('DB_USER'), password=os.environ.get('DB_PASSWORD'), database=os.environ.get('DB_NAME'), host=os.environ.get('DB_HOST'))
-    for task in tasks:
-        await conn.execute('''
-            INSERT INTO tasks(id, title, status) VALUES($1, $2, $3)
-        ''', task['id'], task['title'], task['status'])
-    await conn.close()
+tenants = [
+    {"user_id": 1, "tenant_name": "Tenant A", "qlik_cloud_key": "keyA"},
+    {"user_id": 2, "tenant_name": "Tenant B", "qlik_cloud_key": "keyB"}
+]
 
-def populate_redis():
-    r = redis.Redis(host=os.environ.get('REDIS_HOST'), port=int(os.environ.get('REDIS_PORT')), db=int(os.environ.get('REDIS_DB')))
-    r.set('total_tasks', len(tasks))
-    for task in tasks:
-        r.hmset(f'task_{task["id"]}', task)
+tasks = [
+    {"tenant_id": 1, "title": "Setup Qlik Cloud instance for Tenant A", "status": "Pending"},
+    {"tenant_id": 1, "title": "Configure user permissions for Tenant A", "status": "Completed"},
+    {"tenant_id": 2, "title": "Review usage metrics for Tenant B", "status": "In Progress"}
+]
 
-if __name__ == os.environ.get("__main__"):
-    asyncio.run(populate_postgres())
-    populate_redis()
-    
+# Populating PostgreSQL with dummy data
+def populate_postgres():
+    for user in users:
+        db_user = UserDB(email=user["email"], hashed_password=user["hashed_password"])
+        db.add(db_user)
+        db.commit()
+
+    for tenant in tenants:
+        db_tenant = TenantDB(**tenant)
+        db.add(db_tenant)
+        db.commit()
+
+    for task in tasks:
+        db_task = TaskDB(**task)
+        db.add(db_task)
+        db.commit()
+    db.close()
+
+if __name__ == "__main__":
+    populate_postgres()
