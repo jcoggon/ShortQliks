@@ -1,8 +1,10 @@
-from flask import request, jsonify, Blueprint, render_template, current_app
+from flask import request, jsonify, Blueprint, render_template, current_app, redirect, url_for
 from app import db
 from app.models.qlik_app import QlikApp
 from app.models.qlik_user import QlikUser, AssignedGroup, AssignedRole
 from app.models.reload_task import ReloadTask
+from app.models.user import User
+from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from . import main
 import requests
 import logging
@@ -11,6 +13,36 @@ QLIK_APP_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/apps"
 QLIK_USERS_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/users"
 QLIK_RELOAD_TASK_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks"
 QLIK_RELOAD_TASK_UPDATE_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks/{task_id}"
+
+
+@main.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    user = create_user_from_data(data)
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({"message": "User created successfully!"}), 201
+
+
+@main.route('/generate_api_key', methods=['POST'])
+def generate_api_key():
+    data = request.get_json()
+    user = User.query.filter_by(email=data['email']).first()
+    if user:
+        s = Serializer(current_app.config['SECRET_KEY'], '1800')
+        user.admin_dashboard_api_key = s.dumps({'user_id': user.id})
+        db.session.commit()
+        return jsonify({"message": "API key generated successfully!", "api_key": user.admin_dashboard_api_key}), 200
+    return jsonify({"message": "Email not found"}), 404
+
+@main.route('/list_tasks')
+def list_tasks():
+    return render_template('list_tasks.html')
+
+@main.route('/get_all_reload_tasks', methods=['GET'])
+def get_all_reload_tasks():
+    tasks = ReloadTask.query.all()
+    return jsonify([task.to_dict() for task in tasks])
 
 @main.route('/update_task_page/<task_id>')
 def update_task_page(task_id):
@@ -27,8 +59,12 @@ def get_reload_task(task_id):
 @main.route('/fetch_and_store_apps', methods=['POST'])
 def fetch_and_store_apps():
     api_key = request.headers.get('X-API-Key')
+    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
+    if not user:
+        return jsonify({"message": "Invalid API key"}), 401
+
     headers = {
-        'Authorization': f'Bearer {api_key}',
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
     
@@ -54,8 +90,12 @@ def fetch_and_store_apps():
 @main.route('/fetch_and_store_users', methods=['POST'])
 def fetch_and_store_users():
     api_key = request.headers.get('X-API-Key')
+    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
+    if not user:
+        return jsonify({"message": "Invalid API key"}), 401
+
     headers = {
-        'Authorization': f'Bearer {api_key}',
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
@@ -129,8 +169,12 @@ def fetch_and_store_users():
 @main.route('/fetch_and_store_reload_tasks', methods=['POST'])
 def fetch_and_store_reload_tasks():
     api_key = request.headers.get('X-API-Key')
+    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
+    if not user:
+        return jsonify({"message": "Invalid API key"}), 401
+
     headers = {
-        'Authorization': f'Bearer {api_key}',
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
@@ -173,6 +217,15 @@ def fetch_and_store_reload_tasks():
 
 @main.route('/update_reload_task/<task_id>', methods=['PUT'])
 def update_reload_task(task_id):
+    api_key = request.headers.get('X-API-Key')
+    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
+    if not user:
+        return jsonify({"message": "Invalid API key"}), 401
+
+    headers = {
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Content-Type': 'application/json'
+    }
     try:
         data = request.json
 
@@ -198,14 +251,7 @@ def update_reload_task(task_id):
         for key, value in data.items():
             setattr(task, key, value)
         db.session.commit()
-
-        # Update Qlik Cloud
-        api_key = 'eyJhbGciOiJFUzM4NCIsImtpZCI6ImEzMDY5MjhiLWYyN2MtNDhiNS04NjFjLTQ1OWJiODE1NWY4YiIsInR5cCI6IkpXVCJ9.eyJzdWJUeXBlIjoidXNlciIsInRlbmFudElkIjoiWER2STFkazYwVlR1X0NDNV9JODhvQzFJWWF4WlNpTkMiLCJqdGkiOiJhMzA2OTI4Yi1mMjdjLTQ4YjUtODYxYy00NTliYjgxNTVmOGIiLCJhdWQiOiJxbGlrLmFwaSIsImlzcyI6InFsaWsuYXBpL2FwaS1rZXlzIiwic3ViIjoiSWM0WHpmbk5ucU9NejZDTlN3MjdNR1lweGY1UFNtYjIifQ.7edOBDPF5Y6TL5mfuye2Tt-scGsQm3qZmKx-XXyAYIyUsrbpUgxeiWl7CMzF_UIqUHS8iJpcFm-PdT9Y9Au4jLxWhdGeh8IDClcHP6rymWMuNLIdNiHIswoJ8oBOsxrQ' #request.headers.get('X-API-Key')  # Assuming you're sending the API key in the request headers
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json'
-        }
-
+        
         if not data['recurrence']:
             # Option 2: Provide a default value (uncomment the line below if you want to use this option)
             data['recurrence'] = None  # Replace DEFAULT_VALUE with a valid recurrence value
@@ -216,7 +262,8 @@ def update_reload_task(task_id):
             current_app.logger.error(f"Error updating task {task_id} in Qlik Cloud: {response.text}")
             return jsonify({"message": f"Error updating task in Qlik Cloud: {response.text}"}), 500
 
-        return jsonify({"message": "Task updated successfully in both local database and Qlik Cloud!"})
+        # After successful update, return a JSON response with the URL to redirect to
+        return jsonify({"message": "Task updated successfully in both local database and Qlik Cloud!", "redirect_url": url_for('main.list_tasks')})
     except Exception as e:
         current_app.logger.error(f"Error updating task {task_id}: {str(e)}")  # Log the error
         return jsonify({"message": f"Error: {str(e)}"}), 500
@@ -250,6 +297,16 @@ def user_input_to_icalendar_format(data):
                 rrule += f";{unit.upper()}={value}"
     return rrule
 
+def create_user_from_data(data):
+    return User(
+        fullname=data['fullname'],
+        email=data['email'],
+        password=data['password'],
+        qlik_cloud_tenant_url=data['qlik_cloud_tenant_url'],
+        qlik_cloud_api_key=data['qlik_cloud_api_key']
+    )
+
+
 def create_app_from_data(attributes):
     return QlikApp(
         id=attributes.get('id'),
@@ -271,7 +328,7 @@ def create_app_from_data(attributes):
         isDirectQueryMode=attributes.get('isDirectQueryMode')
     )
 
-def create_user_from_data(user_id, attributes, qlik_app_link):
+def create_qlik_user_from_data(user_id, attributes, qlik_app_link):
     return QlikUser(
         id=user_id,
         name=attributes.get('name'),

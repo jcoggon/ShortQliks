@@ -1,0 +1,75 @@
+<!-- app/main/templates/list_tasks.html -->
+
+<html>
+<head>
+    <title>List of Reload Tasks</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h2>List of Reload Tasks</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Task ID</th>
+                <th>App ID</th>
+                <th>Partial</th>
+                <th>Time Zone</th>
+                <th>Auto Reload</th>
+                <th>Recurrence</th>
+                <th>End Date Time</th>
+                <th>Start Date Time</th>
+                <th>Auto Reload Partial</th>
+                <th>State</th>
+                <th>Edit</th>
+            </tr>
+        </thead>
+        <tbody id="task-list">
+            <!-- Tasks will be populated here by JavaScript -->
+        </tbody>
+    </table>
+    <script>
+        // Fetch the data
+        fetch('/get_all_reload_tasks')
+            .then(response => response.json())
+            .then(data => {
+                const taskList = document.getElementById('task-list');
+                data.forEach(task => {
+                    const row = document.createElement('tr');
+                    // Ensure the order of properties matches the order of table headers
+                    const properties = ['id', 'appId', 'partial', 'timeZone', 'autoReload', 'recurrence', 'endDateTime', 'startDateTime', 'autoReloadPartial', 'state'];
+                    properties.forEach(prop => {
+                        const cell = document.createElement('td');
+                        cell.textContent = task[prop];
+                        row.appendChild(cell);
+                    });
+                    const editCell = document.createElement('td');
+                    const editLink = document.createElement('a');
+                    editLink.href = `/update_task_page/${task.id}`;
+                    editLink.textContent = 'Edit';
+                    editCell.appendChild(editLink);
+                    row.appendChild(editCell);
+                    taskList.appendChild(row);
+                });
+            });
+    </script>
+</body>
+</html>
