@@ -5,6 +5,7 @@ from app.models.qlik_user import QlikUser, AssignedGroup, AssignedRole
 from app.models.reload_task import ReloadTask
 from app.models.user import User
 from app.models.tenant import Tenant
+from app.models.associations import user_tenants
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from . import main
 import requests
@@ -20,13 +21,14 @@ def signup():
     if request.method == 'POST':
         data = request.form
         user = create_user_from_data(data)
+        qlik_cloud_api_key = data.get('qlik_cloud_api_key')
 
         # Add the user to the session and commit to get the user.id
         db.session.add(user)
         db.session.commit()
 
         # Validate the provided tenant URL and Qlik Cloud API key
-        if not check_tenant(user):
+        if not check_tenant(user, qlik_cloud_api_key):
             flash('Invalid tenant URL or Qlik Cloud API key. Please try again.')
             return render_template('signup.html')
 
@@ -35,7 +37,7 @@ def signup():
         user.admin_dashboard_api_key = s.dumps({'user_id': user.id})
 
         # Fetch and store data for each tenant
-        tenants = Tenant.query.filter_by(user_id=user.id).all()
+        tenants = user.tenants
         for tenant in tenants:
             fetch_and_store_apps(tenant.id)
             fetch_and_store_users(tenant.id)
@@ -45,7 +47,7 @@ def signup():
         db.session.commit()
 
         flash('Signup successful. Please login.')
-        return redirect(url_for('main.login'))
+        return redirect(url_for('main.login')), 200
     return render_template('signup.html')
 
 def check_quota(user):
@@ -56,18 +58,20 @@ def check_quota(user):
     response = requests.get(f"https://{user.qlik_cloud_tenant_url}/api/v1/quotas", headers=headers)
     return response.status_code == 200  # Return True if the API call was successful, False otherwise
 
-def check_tenant(user):
+def check_tenant(user, qlik_cloud_api_key):
     headers = {
-        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
     response = requests.get(f"https://{user.qlik_cloud_tenant_url}/api/v1/tenants", headers=headers)
     response_data = response.json()
     tenants = response_data.get('data', [])
     for tenant_data in tenants:
+        tenant_data['qlik_cloud_api_key'] = qlik_cloud_api_key
         tenant = create_tenant_from_data(tenant_data)
-        tenant.user_id = user.id  # Set the user_id field to the ID of the user
-        db.session.merge(tenant)
+        # Check if the association already exists
+        if tenant not in user.tenants:
+            user.tenants.append(tenant)  # Add the tenant to the user's tenants
     db.session.commit()
     return response.status_code == 200  # Return True if the API call was successful, False otherwise
 
@@ -92,7 +96,7 @@ def dashboard(user_id):
             db.session.commit()
         else:
             flash('Failed to generate API key.')
-    return render_template('dashboard.html', user=user)
+    return render_template('dashboard.html', user=user, tenants=user.tenants)
 
 
 @main.route('/generate_api_key', methods=['POST'])
@@ -134,7 +138,7 @@ def fetch_and_store_apps(tenant_id):
         return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
@@ -166,7 +170,7 @@ def fetch_and_store_users(tenant_id):
         return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
@@ -244,7 +248,7 @@ def fetch_and_store_reload_tasks(tenant_id):
         return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
@@ -299,10 +303,6 @@ def update_reload_task(task_id):
     if not user:
         return jsonify({"message": "Invalid API key"}), 401
 
-    headers = {
-        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
-        'Content-Type': 'application/json'
-    }
     try:
         data = request.json
 
@@ -329,6 +329,11 @@ def update_reload_task(task_id):
         if not tenant:
             return jsonify({"message": "Tenant not found"}), 404
 
+        headers = {
+        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
+        'Content-Type': 'application/json'
+        }
+        
         # Update local database
         for key, value in data.items():
             setattr(task, key, value)
@@ -386,26 +391,41 @@ def create_user_from_data(data):
         fullname=data['fullname'],
         email=data['email'],
         password=data['password'],
-        qlik_cloud_tenant_url=data['qlik_cloud_tenant_url'],
-        qlik_cloud_api_key=data['qlik_cloud_api_key']
+        qlik_cloud_tenant_url=data['qlik_cloud_tenant_url']
     )
 
 def create_tenant_from_data(tenant_data):
-    return Tenant(
-        id=tenant_data.get('id'),
-        name=tenant_data.get('name'),
-        hostnames=','.join(tenant_data.get('hostnames', [])),
-        createdByUser=tenant_data.get('createdByUser'),
-        datacenter=tenant_data.get('datacenter'),
-        created=tenant_data.get('created'),
-        lastUpdated=tenant_data.get('lastUpdated'),
-        status=tenant_data.get('status'),
-        autoAssignCreateSharedSpacesRoleToProfessionals=tenant_data.get('autoAssignCreateSharedSpacesRoleToProfessionals'),
-        autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals=tenant_data.get('autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals'),
-        autoAssignDataServicesContributorRoleToProfessionals=tenant_data.get('autoAssignDataServicesContributorRoleToProfessionals'),
-        enableAnalyticCreation=tenant_data.get('enableAnalyticCreation'),
-        user_id=tenant_data.get('user_id')
-    )
+    tenant = Tenant.query.get(tenant_data.get('id'))
+    if tenant is None:
+        tenant = Tenant(
+            id=tenant_data.get('id'),
+            name=tenant_data.get('name'),
+            hostnames=','.join(tenant_data.get('hostnames', [])),
+            createdByUser=tenant_data.get('createdByUser'),
+            datacenter=tenant_data.get('datacenter'),
+            created=tenant_data.get('created'),
+            lastUpdated=tenant_data.get('lastUpdated'),
+            status=tenant_data.get('status'),
+            autoAssignCreateSharedSpacesRoleToProfessionals=tenant_data.get('autoAssignCreateSharedSpacesRoleToProfessionals'),
+            autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals=tenant_data.get('autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals'),
+            autoAssignDataServicesContributorRoleToProfessionals=tenant_data.get('autoAssignDataServicesContributorRoleToProfessionals'),
+            enableAnalyticCreation=tenant_data.get('enableAnalyticCreation'),
+            qlik_cloud_api_key=tenant_data.get('qlik_cloud_api_key')
+        )
+    else:
+        tenant.name = tenant_data.get('name')
+        tenant.hostnames = ','.join(tenant_data.get('hostnames', []))
+        tenant.createdByUser = tenant_data.get('createdByUser')
+        tenant.datacenter = tenant_data.get('datacenter')
+        tenant.created = tenant_data.get('created')
+        tenant.lastUpdated = tenant_data.get('lastUpdated')
+        tenant.status = tenant_data.get('status')
+        tenant.autoAssignCreateSharedSpacesRoleToProfessionals = tenant_data.get('autoAssignCreateSharedSpacesRoleToProfessionals')
+        tenant.autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals = tenant_data.get('autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals')
+        tenant.autoAssignDataServicesContributorRoleToProfessionals = tenant_data.get('autoAssignDataServicesContributorRoleToProfessionals')
+        tenant.enableAnalyticCreation = tenant_data.get('enableAnalyticCreation')
+        tenant.qlik_cloud_api_key = tenant_data.get('qlik_cloud_api_key')
+    return tenant
 
 def create_app_from_data(attributes):
     return QlikApp(

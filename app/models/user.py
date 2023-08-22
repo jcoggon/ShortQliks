@@ -1,6 +1,7 @@
 # app/models/user.py
 
 from app import db
+from app.models.associations import user_tenants
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class User(db.Model):
@@ -9,8 +10,8 @@ class User(db.Model):
     email = db.Column(db.String(255), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
     qlik_cloud_tenant_url = db.Column(db.String(255), nullable=False)
-    qlik_cloud_api_key = db.Column(db.String(1000), nullable=True)
-    admin_dashboard_api_key = db.Column(db.String(1000), unique=True, nullable=True)
+    admin_dashboard_api_key = db.Column(db.String(500), unique=True, nullable=True)
+    tenants = db.relationship('Tenant', secondary=user_tenants, overlaps="users")
 
     @property
     def password(self):

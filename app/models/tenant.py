@@ -1,4 +1,7 @@
+# app/models/tenant.py
+
 from app import db
+from app.models.associations import user_tenants
 from sqlalchemy.orm import relationship
 
 class Tenant(db.Model):
@@ -14,5 +17,5 @@ class Tenant(db.Model):
     autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals = db.Column(db.Boolean, nullable=True)
     autoAssignDataServicesContributorRoleToProfessionals = db.Column(db.Boolean, nullable=True)
     enableAnalyticCreation = db.Column(db.Boolean, nullable=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))  # Add this line
-    user = relationship('User', backref='tenants')  # Add this line
+    qlik_cloud_api_key = db.Column(db.String(500))
+    users = db.relationship('User', secondary=user_tenants, overlaps="tenants")
