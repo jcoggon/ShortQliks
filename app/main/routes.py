@@ -10,10 +10,10 @@ from . import main
 import requests
 import logging
 
-QLIK_APP_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/apps"
-QLIK_USERS_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/users"
-QLIK_RELOAD_TASK_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks"
-QLIK_RELOAD_TASK_UPDATE_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks/{task_id}"
+# QLIK_APP_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/apps"
+# QLIK_USERS_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/users"
+# QLIK_RELOAD_TASK_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks"
+# QLIK_RELOAD_TASK_UPDATE_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks/{task_id}"
 
 @main.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -138,7 +138,8 @@ def fetch_and_store_apps(tenant_id):
         'Content-Type': 'application/json'
     }
 
-    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/apps"
+    hostname = tenant.hostnames.split(',')[-1]
+    next_url = f"https://{hostname}/api/v1/apps"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -169,7 +170,8 @@ def fetch_and_store_users(tenant_id):
         'Content-Type': 'application/json'
     }
 
-    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/users"
+    hostname = tenant.hostnames.split(',')[-1]
+    next_url = f"https://{hostname}/api/v1/users"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -246,7 +248,8 @@ def fetch_and_store_reload_tasks(tenant_id):
         'Content-Type': 'application/json'
     }
 
-    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/reload-tasks"
+    hostname = tenant.hostnames.split(',')[-1]
+    next_url = f"https://{hostname}/api/v1/reload-tasks"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -321,6 +324,11 @@ def update_reload_task(task_id):
         if not task:
             return jsonify({"message": "Task not found"}), 404
 
+        # Get the tenant associated with the task
+        tenant = Tenant.query.get(task.tenant_id)
+        if not tenant:
+            return jsonify({"message": "Tenant not found"}), 404
+
         # Update local database
         for key, value in data.items():
             setattr(task, key, value)
@@ -330,6 +338,8 @@ def update_reload_task(task_id):
             # Option 2: Provide a default value (uncomment the line below if you want to use this option)
             data['recurrence'] = None  # Replace DEFAULT_VALUE with a valid recurrence value
 
+        hostname = tenant.hostnames.split(',')[-1]
+        QLIK_RELOAD_TASK_UPDATE_ENDPOINT = f"https://{hostname}/api/v1/reload-tasks/{task_id}"
         response = requests.put(QLIK_RELOAD_TASK_UPDATE_ENDPOINT.format(task_id=task_id), headers=headers, json=data)
 
         if response.status_code != 200:
