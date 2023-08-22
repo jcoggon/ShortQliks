@@ -1,9 +1,10 @@
-from flask import request, jsonify, Blueprint, render_template, current_app, redirect, url_for
+from flask import request, jsonify, Blueprint, render_template, current_app, redirect, url_for, flash
 from app import db
 from app.models.qlik_app import QlikApp
 from app.models.qlik_user import QlikUser, AssignedGroup, AssignedRole
 from app.models.reload_task import ReloadTask
 from app.models.user import User
+from app.models.tenant import Tenant
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from . import main
 import requests
@@ -14,14 +15,84 @@ QLIK_USERS_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/users"
 QLIK_RELOAD_TASK_API_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks"
 QLIK_RELOAD_TASK_UPDATE_ENDPOINT = "https://mm-saas.eu.qlikcloud.com/api/v1/reload-tasks/{task_id}"
 
-
-@main.route('/signup', methods=['POST'])
+@main.route('/signup', methods=['GET', 'POST'])
 def signup():
-    data = request.get_json()
-    user = create_user_from_data(data)
-    db.session.add(user)
+    if request.method == 'POST':
+        data = request.form
+        user = create_user_from_data(data)
+
+        # Add the user to the session and commit to get the user.id
+        db.session.add(user)
+        db.session.commit()
+
+        # Validate the provided tenant URL and Qlik Cloud API key
+        if not check_tenant(user):
+            flash('Invalid tenant URL or Qlik Cloud API key. Please try again.')
+            return render_template('signup.html')
+
+        # Generate the API key
+        s = Serializer(current_app.config['SECRET_KEY'], '1800')
+        user.admin_dashboard_api_key = s.dumps({'user_id': user.id})
+
+        # Fetch and store data for each tenant
+        tenants = Tenant.query.filter_by(user_id=user.id).all()
+        for tenant in tenants:
+            fetch_and_store_apps(tenant.id)
+            fetch_and_store_users(tenant.id)
+            fetch_and_store_reload_tasks(tenant.id)
+
+        # Commit the user again to save the admin_dashboard_api_key
+        db.session.commit()
+
+        flash('Signup successful. Please login.')
+        return redirect(url_for('main.login'))
+    return render_template('signup.html')
+
+def check_quota(user):
+    headers = {
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.get(f"https://{user.qlik_cloud_tenant_url}/api/v1/quotas", headers=headers)
+    return response.status_code == 200  # Return True if the API call was successful, False otherwise
+
+def check_tenant(user):
+    headers = {
+        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.get(f"https://{user.qlik_cloud_tenant_url}/api/v1/tenants", headers=headers)
+    response_data = response.json()
+    tenants = response_data.get('data', [])
+    for tenant_data in tenants:
+        tenant = create_tenant_from_data(tenant_data)
+        tenant.user_id = user.id  # Set the user_id field to the ID of the user
+        db.session.merge(tenant)
     db.session.commit()
-    return jsonify({"message": "User created successfully!"}), 201
+    return response.status_code == 200  # Return True if the API call was successful, False otherwise
+
+@main.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        user = User.query.filter_by(email=request.form.get('email')).first()
+        if user and user.check_password(request.form.get('password')):
+            flash('Login successful.')
+            return redirect(url_for('main.dashboard', user_id=user.id))
+        else:
+            flash('Invalid email or password.')
+    return render_template('login.html')
+
+@main.route('/dashboard/<int:user_id>')
+def dashboard(user_id):
+    user = User.query.get(user_id)
+    if not user.admin_dashboard_api_key:
+        response = requests.post('http://127.0.0.1:5000' + url_for('main.generate_api_key'), json={'email': user.email})
+        if response.status_code == 200:
+            user.admin_dashboard_api_key = response.json()['api_key']
+            db.session.commit()
+        else:
+            flash('Failed to generate API key.')
+    return render_template('dashboard.html', user=user)
 
 
 @main.route('/generate_api_key', methods=['POST'])
@@ -56,19 +127,18 @@ def get_reload_task(task_id):
     return jsonify(task.to_dict())  # Assuming you have a to_dict() method in your ReloadTask model
 
 
-@main.route('/fetch_and_store_apps', methods=['POST'])
-def fetch_and_store_apps():
-    api_key = request.headers.get('X-API-Key')
-    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
-    if not user:
-        return jsonify({"message": "Invalid API key"}), 401
+@main.route('/fetch_and_store_apps/<tenant_id>', methods=['POST'])
+def fetch_and_store_apps(tenant_id):
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
-    
-    next_url = QLIK_APP_API_ENDPOINT
+
+    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/apps"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -79,6 +149,7 @@ def fetch_and_store_apps():
         for app_data in apps:
             attributes = app_data.get('attributes', {})
             app = create_app_from_data(attributes)
+            app.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
             db.session.merge(app)
         db.session.commit()
 
@@ -87,19 +158,18 @@ def fetch_and_store_apps():
 
     return jsonify({"message": "Apps fetched and stored successfully!"})
 
-@main.route('/fetch_and_store_users', methods=['POST'])
-def fetch_and_store_users():
-    api_key = request.headers.get('X-API-Key')
-    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
-    if not user:
-        return jsonify({"message": "Invalid API key"}), 401
+@main.route('/fetch_and_store_users/<tenant_id>', methods=['POST'])
+def fetch_and_store_users(tenant_id):
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
-    next_url = QLIK_USERS_API_ENDPOINT
+    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/users"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -154,7 +224,6 @@ def fetch_and_store_users():
                     existing_user.roles.append(role)
                     db.session.merge(role)
 
-
             # Check if there's a next page to fetch
             next_link = response_data.get('links', {}).get('next')
             next_url = next_link.get('href') if next_link else None
@@ -166,19 +235,18 @@ def fetch_and_store_users():
     db.session.commit()
     return jsonify({"message": "Users fetched and stored successfully!"})
 
-@main.route('/fetch_and_store_reload_tasks', methods=['POST'])
-def fetch_and_store_reload_tasks():
-    api_key = request.headers.get('X-API-Key')
-    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
-    if not user:
-        return jsonify({"message": "Invalid API key"}), 401
+@main.route('/fetch_and_store_reload_tasks/<tenant_id>', methods=['POST'])
+def fetch_and_store_reload_tasks(tenant_id):
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        return jsonify({"message": "Tenant not found"}), 404
 
     headers = {
-        'Authorization': f'Bearer {user.qlik_cloud_api_key}',
+        'Authorization': f'Bearer {tenant.user.qlik_cloud_api_key}',
         'Content-Type': 'application/json'
     }
 
-    next_url = QLIK_RELOAD_TASK_API_ENDPOINT
+    next_url = f"https://{tenant.name}.eu.qlikcloud.com/api/v1/reload-tasks"
     while next_url:
         response = requests.get(next_url, headers=headers)
         if response.status_code != 200:
@@ -198,11 +266,18 @@ def fetch_and_store_reload_tasks():
                 if not existing_task:
                     task = create_reload_task_from_data(task_data)
                     db.session.add(task)
+                    existing_task = task  # Set existing_task to the newly created task
+                    existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
                 else:
                     for key, value in task_data.items():
                         if key == 'recurrence' and isinstance(value, str):  # Convert comma-separated string to list
                             value = value.split(',')
                         setattr(existing_task, key, value)
+
+                existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
+                
+                # Commit the changes to the database
+                db.session.commit()
 
             # Check if there's a next page to fetch
             next_link = response_data.get('links', {}).get('next')
@@ -212,7 +287,6 @@ def fetch_and_store_reload_tasks():
             print(f"Exception encountered: {str(e)}")
             return jsonify({"error": str(e)}), 500
 
-    db.session.commit()
     return jsonify({"message": "Reload tasks fetched and stored successfully!"})
 
 @main.route('/update_reload_task/<task_id>', methods=['PUT'])
@@ -306,6 +380,22 @@ def create_user_from_data(data):
         qlik_cloud_api_key=data['qlik_cloud_api_key']
     )
 
+def create_tenant_from_data(tenant_data):
+    return Tenant(
+        id=tenant_data.get('id'),
+        name=tenant_data.get('name'),
+        hostnames=','.join(tenant_data.get('hostnames', [])),
+        createdByUser=tenant_data.get('createdByUser'),
+        datacenter=tenant_data.get('datacenter'),
+        created=tenant_data.get('created'),
+        lastUpdated=tenant_data.get('lastUpdated'),
+        status=tenant_data.get('status'),
+        autoAssignCreateSharedSpacesRoleToProfessionals=tenant_data.get('autoAssignCreateSharedSpacesRoleToProfessionals'),
+        autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals=tenant_data.get('autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals'),
+        autoAssignDataServicesContributorRoleToProfessionals=tenant_data.get('autoAssignDataServicesContributorRoleToProfessionals'),
+        enableAnalyticCreation=tenant_data.get('enableAnalyticCreation'),
+        user_id=tenant_data.get('user_id')
+    )
 
 def create_app_from_data(attributes):
     return QlikApp(
@@ -325,7 +415,8 @@ def create_app_from_data(attributes):
         modifiedDate=attributes.get('modifiedDate'),
         lastReloadTime=attributes.get('lastReloadTime'),
         hasSectionAccess=attributes.get('hasSectionAccess'),
-        isDirectQueryMode=attributes.get('isDirectQueryMode')
+        isDirectQueryMode=attributes.get('isDirectQueryMode'),
+        tenant_id=attributes.get('tenant_id')
     )
 
 def create_qlik_user_from_data(user_id, attributes, qlik_app_link):
@@ -358,5 +449,6 @@ def create_reload_task_from_data(attributes):
         tenantId=attributes.get('tenantId'),
         fortressId=attributes.get('fortressId'),
         lastExecutionTime=attributes.get('lastExecutionTime'),
-        nextExecutionTime=attributes.get('nextExecutionTime')
+        nextExecutionTime=attributes.get('nextExecutionTime'),
+        tenant_id=attributes.get('tenant_id')
     )

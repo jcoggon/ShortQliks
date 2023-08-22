@@ -18,3 +18,4 @@ class QlikApp(db.Model):
     lastReloadTime = db.Column(db.String(255), nullable=True)
     hasSectionAccess = db.Column(db.Boolean, nullable=True)  # Added nullable=True
     isDirectQueryMode = db.Column(db.Boolean, nullable=True)  # Added nullable=True
+    tenant_id = db.Column(db.String, db.ForeignKey('tenant.id'))  # Add this line

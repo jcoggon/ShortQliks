@@ -18,6 +18,7 @@ class ReloadTask(db.Model):
     fortressId = db.Column(db.String(255), nullable=True)
     lastExecutionTime = db.Column(db.DateTime, nullable=True)
     nextExecutionTime = db.Column(db.DateTime, nullable=True)
+    tenant_id = db.Column(db.String, db.ForeignKey('tenant.id'))  # Add this line
 
     def to_dict(self):
         return {
@@ -37,5 +38,6 @@ class ReloadTask(db.Model):
             'tenantId': self.tenantId,
             'fortressId': self.fortressId,
             'lastExecutionTime': self.lastExecutionTime.strftime('%Y-%m-%dT%H:%M:%S') if self.lastExecutionTime else None,
-            'nextExecutionTime': self.nextExecutionTime.strftime('%Y-%m-%dT%H:%M:%S') if self.nextExecutionTime else None
+            'nextExecutionTime': self.nextExecutionTime.strftime('%Y-%m-%dT%H:%M:%S') if self.nextExecutionTime else None,
+            'tenant_id': self.tenant_id
         }

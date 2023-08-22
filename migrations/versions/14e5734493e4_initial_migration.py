@@ -1,8 +1,8 @@
 """Initial migration.
 
-Revision ID: 1531d6e830fc
+Revision ID: 14e5734493e4
 Revises: 
-Create Date: 2023-08-21 13:52:41.351445
+Create Date: 2023-08-22 12:25:36.297192
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '1531d6e830fc'
+revision = '14e5734493e4'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -31,6 +31,58 @@ def upgrade():
     sa.Column('permissions', sa.String(length=255), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('qlik_user',
+    sa.Column('id', sa.String(length=255), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=True),
+    sa.Column('email', sa.String(length=255), nullable=True),
+    sa.Column('tenantId', sa.String(length=255), nullable=True),
+    sa.Column('status', sa.String(length=255), nullable=True),
+    sa.Column('created', sa.DateTime(), nullable=True),
+    sa.Column('lastUpdated', sa.DateTime(), nullable=True),
+    sa.Column('qlik_app_link', sa.String(length=255), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('user',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('fullname', sa.String(length=255), nullable=False),
+    sa.Column('email', sa.String(length=255), nullable=False),
+    sa.Column('password_hash', sa.String(length=128), nullable=True),
+    sa.Column('qlik_cloud_tenant_url', sa.String(length=255), nullable=False),
+    sa.Column('qlik_cloud_api_key', sa.String(length=1000), nullable=True),
+    sa.Column('admin_dashboard_api_key', sa.String(length=1000), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('admin_dashboard_api_key'),
+    sa.UniqueConstraint('email')
+    )
+    op.create_table('tenant',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=True),
+    sa.Column('hostnames', sa.String(length=500), nullable=True),
+    sa.Column('createdByUser', sa.String(length=255), nullable=True),
+    sa.Column('datacenter', sa.String(length=255), nullable=True),
+    sa.Column('created', sa.String(length=255), nullable=True),
+    sa.Column('lastUpdated', sa.String(length=255), nullable=True),
+    sa.Column('status', sa.String(length=255), nullable=True),
+    sa.Column('autoAssignCreateSharedSpacesRoleToProfessionals', sa.Boolean(), nullable=True),
+    sa.Column('autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals', sa.Boolean(), nullable=True),
+    sa.Column('autoAssignDataServicesContributorRoleToProfessionals', sa.Boolean(), nullable=True),
+    sa.Column('enableAnalyticCreation', sa.Boolean(), nullable=True),
+    sa.Column('user_id', sa.Integer(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('user_group_association',
+    sa.Column('user_id', sa.String(), nullable=True),
+    sa.Column('group_id', sa.String(), nullable=True),
+    sa.ForeignKeyConstraint(['group_id'], ['assigned_group.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['qlik_user.id'], )
+    )
+    op.create_table('user_role_association',
+    sa.Column('user_id', sa.String(), nullable=True),
+    sa.Column('role_id', sa.String(), nullable=True),
+    sa.ForeignKeyConstraint(['role_id'], ['assigned_role.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['qlik_user.id'], )
+    )
     op.create_table('qlik_app',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=True),
@@ -49,17 +101,8 @@ def upgrade():
     sa.Column('lastReloadTime', sa.String(length=255), nullable=True),
     sa.Column('hasSectionAccess', sa.Boolean(), nullable=True),
     sa.Column('isDirectQueryMode', sa.Boolean(), nullable=True),
-    sa.PrimaryKeyConstraint('id')
-    )
-    op.create_table('qlik_user',
-    sa.Column('id', sa.String(length=255), nullable=False),
-    sa.Column('name', sa.String(length=255), nullable=True),
-    sa.Column('email', sa.String(length=255), nullable=True),
-    sa.Column('tenantId', sa.String(length=255), nullable=True),
-    sa.Column('status', sa.String(length=255), nullable=True),
-    sa.Column('created', sa.DateTime(), nullable=True),
-    sa.Column('lastUpdated', sa.DateTime(), nullable=True),
-    sa.Column('qlik_app_link', sa.String(length=255), nullable=True),
+    sa.Column('tenant_id', sa.String(), nullable=True),
+    sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('reload_task',
@@ -80,43 +123,22 @@ def upgrade():
     sa.Column('fortressId', sa.String(length=255), nullable=True),
     sa.Column('lastExecutionTime', sa.DateTime(), nullable=True),
     sa.Column('nextExecutionTime', sa.DateTime(), nullable=True),
+    sa.Column('tenant_id', sa.String(), nullable=True),
+    sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ),
     sa.PrimaryKeyConstraint('id')
-    )
-    op.create_table('user',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('fullname', sa.String(length=255), nullable=False),
-    sa.Column('email', sa.String(length=255), nullable=False),
-    sa.Column('password_hash', sa.String(length=128), nullable=True),
-    sa.Column('qlik_cloud_tenant_url', sa.String(length=255), nullable=False),
-    sa.Column('qlik_cloud_api_key', sa.String(length=255), nullable=True),
-    sa.Column('admin_dashboard_api_key', sa.String(length=255), nullable=True),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('admin_dashboard_api_key'),
-    sa.UniqueConstraint('email')
-    )
-    op.create_table('user_group_association',
-    sa.Column('user_id', sa.String(), nullable=True),
-    sa.Column('group_id', sa.String(), nullable=True),
-    sa.ForeignKeyConstraint(['group_id'], ['assigned_group.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['qlik_user.id'], )
-    )
-    op.create_table('user_role_association',
-    sa.Column('user_id', sa.String(), nullable=True),
-    sa.Column('role_id', sa.String(), nullable=True),
-    sa.ForeignKeyConstraint(['role_id'], ['assigned_role.id'], ),
-    sa.ForeignKeyConstraint(['user_id'], ['qlik_user.id'], )
     )
     # ### end Alembic commands ###
 
 
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_table('reload_task')
+    op.drop_table('qlik_app')
     op.drop_table('user_role_association')
     op.drop_table('user_group_association')
+    op.drop_table('tenant')
     op.drop_table('user')
-    op.drop_table('reload_task')
     op.drop_table('qlik_user')
-    op.drop_table('qlik_app')
     op.drop_table('assigned_role')
     op.drop_table('assigned_group')
     # ### end Alembic commands ###
