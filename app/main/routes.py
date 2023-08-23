@@ -47,8 +47,8 @@ def signup():
         db.session.commit()
 
         flash('Signup successful. Please login.')
-        return redirect(url_for('main.login')), 200
-    return render_template('signup.html')
+        return jsonify({"message": "Signup successful."}), 200
+    return jsonify({"message": "Signup failed."}), 404
 
 def check_quota(user):
     headers = {
@@ -78,13 +78,16 @@ def check_tenant(user, qlik_cloud_api_key):
 @main.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        data = request.form
         user = User.query.filter_by(email=request.form.get('email')).first()
         if user and user.check_password(request.form.get('password')):
             flash('Login successful.')
-            return redirect(url_for('main.dashboard', user_id=user.id))
+            tenants = user.tenants
+            tenant_info = [{"id": tenant.id, "name": tenant.name} for tenant in tenants]
+            return jsonify({"tenants": tenant_info}), 200 #render_template('login.html')
         else:
             flash('Invalid email or password.')
-    return render_template('login.html')
+    return jsonify({"login": 'Failed'}), 404 #render_template('login.html')
 
 @main.route('/dashboard/<int:user_id>')
 def dashboard(user_id):
