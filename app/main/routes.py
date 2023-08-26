@@ -75,6 +75,33 @@ def check_tenant(user, qlik_cloud_api_key):
     db.session.commit()
     return response.status_code == 200  # Return True if the API call was successful, False otherwise
 
+@main.route('/create_tenant', methods=['GET', 'POST'])
+def create_tenant():
+    if request.method == 'POST':
+        qlik_cloud_tenant_url = request.form.get('qlik_cloud_url')
+        qlik_cloud_api_key = request.form.get('qlik_cloud_api_key')
+        user = User.query.filter_by(_id=request.form.get('user_id')).first()
+        
+        headers = {
+            'Authorization': f'Bearer {qlik_cloud_api_key}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.get(f"https://{qlik_cloud_tenant_url}/api/v1/tenants", headers=headers)
+        response_data = response.json()
+        tenants = response_data.get('data', [])
+        for tenant_data in tenants:
+            tenant_data['qlik_cloud_api_key'] = qlik_cloud_api_key
+            tenant = create_tenant_from_data(tenant_data)
+            # Check if the association already exists
+            if tenant not in user.tenants:
+                user.tenants.append(tenant)  # Add the tenant to the user's tenants
+        db.session.commit()
+        if response.status_code == 200:
+            return jsonify({"status": 200, "message": "Tenant created successfully"}), 200
+        else:
+            return jsonify({"status": response.status_code, "message": "API call was not successful"}), response.status_code
+    return jsonify({"status": 400, "message": "Invalid request method"}), 400
+
 @main.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -82,12 +109,78 @@ def login():
         user = User.query.filter_by(email=request.form.get('email')).first()
         if user and user.check_password(request.form.get('password')):
             flash('Login successful.')
-            tenants = user.tenants
-            tenant_info = [{"id": tenant.id, "name": tenant.name} for tenant in tenants]
-            return jsonify({"tenants": tenant_info}), 200 #render_template('login.html')
+            return jsonify({"user_id": user.id}), 200 #render_template('login.html')
         else:
             flash('Invalid email or password.')
     return jsonify({"login": 'Failed'}), 404 #render_template('login.html')
+
+
+@main.route('/app_search/<string:app_name>', methods=['GET', 'POST'])
+def app_search(app_name):
+    if request.method == 'POST':
+        budibase_api_key = 'budibase'
+        headers = {
+            'x-budibase-api-key': f'{budibase_api_key}',
+            'Content-Type': 'application/json'
+        }
+        data = {"name": app_name}
+        response = requests.post(f"http://localhost:10000/api/public/v1/applications/search", headers=headers, json=data)
+        response_data = response.json()
+        apps = response_data.get('data', [])
+        for app_data in apps:
+            if app_data['status'] == 'published':
+                flash('App Found.')
+                return jsonify({"_id": app_data['_id']}), 200
+        else:
+            flash('Application not found.')
+    return jsonify({"error": 'applicaiton not found'}), 404
+
+
+@main.route('/onboard', methods=['GET', 'POST'])
+def onboard():
+    if request.method == 'POST':
+        app_name = 'ShortQliks'
+        
+        budibase_api_key = 'budibase'
+        headers = {
+            'x-budibase-api-key': f'{budibase_api_key}',
+            'Content-Type': 'application/json'
+        }
+        email = request.form.get('email')
+        firstName = request.form.get('firstName')
+        lastName = request.form.get('lastName')
+        
+        response = requests.post('http://127.0.0.1:5000/app_search/{app_name}'.format(app_name=app_name))
+        if response.status_code == 200:
+            response_data = response.json()
+            app_id = response_data.get('_id')
+        else:
+            flash('Failed to find app.')
+        
+        data = [{"email": email,"userInfo":{"apps":{ app_id:"BASIC" }}}]
+        response = requests.post(f"http://localhost:10000/api/global/users/onboard", headers=headers, json=data)
+        response_data = response.json()
+        users = response_data.get('successful', [])
+        print("Onboarding Successful", users)
+        for user_data in users:
+            user = create_user_onboarding(user_data)
+            # Add the user to the session and commit to get the user.id
+            db.session.add(user)
+            db.session.commit()
+            
+            update_data = {"firstName": firstName, "lastName": lastName, "forceResetPassword": False, "roles":{ app_id:"BASIC" }}
+            response = requests.put('http://localhost:10000/api/public/v1/users/{_id}'.format(_id=user_data['_id']), headers=headers, json=update_data)
+            # response_update = response.json()
+            if response.status_code == 200:
+                flash('Updated user.')
+            else:
+                flash('Failed to update user.')
+            
+            return jsonify({"user_id": user.id}), 200
+        else:
+            flash('Onboarding Failed')
+    return jsonify({"onboarding": 'Failed'}), 404
+
 
 @main.route('/dashboard/<int:user_id>')
 def dashboard(user_id):
@@ -391,10 +484,18 @@ def user_input_to_icalendar_format(data):
 
 def create_user_from_data(data):
     return User(
+        _id=data['_id'],
         fullname=data['fullname'],
         email=data['email'],
         password=data['password'],
         qlik_cloud_tenant_url=data['qlik_cloud_tenant_url']
+    )
+    
+def create_user_onboarding(data):
+    return User(
+        _id=data['_id'],
+        email=data['email'],
+        password=data['password']
     )
 
 def create_tenant_from_data(tenant_data):

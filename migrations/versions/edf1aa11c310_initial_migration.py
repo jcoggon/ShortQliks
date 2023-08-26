@@ -1,8 +1,8 @@
 """Initial migration.
 
-Revision ID: b04edfd801e4
+Revision ID: edf1aa11c310
 Revises: 
-Create Date: 2023-08-22 21:14:07.424467
+Create Date: 2023-08-25 12:48:34.423784
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'b04edfd801e4'
+revision = 'edf1aa11c310'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -60,10 +60,11 @@ def upgrade():
     )
     op.create_table('user',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('fullname', sa.String(length=255), nullable=False),
+    sa.Column('_id', sa.String(length=255), nullable=True),
+    sa.Column('fullname', sa.String(length=255), nullable=True),
     sa.Column('email', sa.String(length=255), nullable=False),
     sa.Column('password_hash', sa.String(length=128), nullable=True),
-    sa.Column('qlik_cloud_tenant_url', sa.String(length=255), nullable=False),
+    sa.Column('qlik_cloud_tenant_url', sa.String(length=255), nullable=True),
     sa.Column('admin_dashboard_api_key', sa.String(length=500), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('admin_dashboard_api_key'),
