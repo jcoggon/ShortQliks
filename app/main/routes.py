@@ -124,7 +124,7 @@ def app_search(app_name):
             'Content-Type': 'application/json'
         }
         data = {"name": app_name}
-        response = requests.post(f"http://localhost:10000/api/public/v1/applications/search", headers=headers, json=data)
+        response = requests.post(f"http://bbproxy:10000/api/public/v1/applications/search", headers=headers, json=data)
         response_data = response.json()
         apps = response_data.get('data', [])
         for app_data in apps:
@@ -150,7 +150,7 @@ def onboard():
         firstName = request.form.get('firstName')
         lastName = request.form.get('lastName')
         
-        response = requests.post('http://127.0.0.1:5000/app_search/{app_name}'.format(app_name=app_name))
+        response = requests.post('http://web:5000/app_search/{app_name}'.format(app_name=app_name))
         if response.status_code == 200:
             response_data = response.json()
             app_id = response_data.get('_id')
@@ -158,10 +158,10 @@ def onboard():
             flash('Failed to find app.')
         
         data = [{"email": email,"userInfo":{"apps":{ app_id:"BASIC" }}}]
-        response = requests.post(f"http://localhost:10000/api/global/users/onboard", headers=headers, json=data)
+        response = requests.post(f"http://bbproxy:10000/api/global/users/onboard", headers=headers, json=data)
         response_data = response.json()
         users = response_data.get('successful', [])
-        print("Onboarding Successful", users)
+        password = users[0]['password']
         for user_data in users:
             user = create_user_onboarding(user_data)
             # Add the user to the session and commit to get the user.id
@@ -169,14 +169,14 @@ def onboard():
             db.session.commit()
             
             update_data = {"firstName": firstName, "lastName": lastName, "forceResetPassword": False, "roles":{ app_id:"BASIC" }}
-            response = requests.put('http://localhost:10000/api/public/v1/users/{_id}'.format(_id=user_data['_id']), headers=headers, json=update_data)
+            response = requests.put('http://bbproxy:10000/api/public/v1/users/{_id}'.format(_id=user_data['_id']), headers=headers, json=update_data)
             # response_update = response.json()
             if response.status_code == 200:
                 flash('Updated user.')
             else:
                 flash('Failed to update user.')
             
-            return jsonify({"user_id": user.id}), 200
+            return jsonify({"user_id": user.id, "password": password}), 200
         else:
             flash('Onboarding Failed')
     return jsonify({"onboarding": 'Failed'}), 404
@@ -186,7 +186,7 @@ def onboard():
 def dashboard(user_id):
     user = User.query.get(user_id)
     if not user.admin_dashboard_api_key:
-        response = requests.post('http://127.0.0.1:5000' + url_for('main.generate_api_key'), json={'email': user.email})
+        response = requests.post('http://web:5000' + url_for('main.generate_api_key'), json={'email': user.email})
         if response.status_code == 200:
             user.admin_dashboard_api_key = response.json()['api_key']
             db.session.commit()
