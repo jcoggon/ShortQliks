@@ -81,7 +81,8 @@ def create_tenant():
         qlik_cloud_tenant_url = request.form.get('qlik_cloud_url')
         qlik_cloud_api_key = request.form.get('qlik_cloud_api_key')
         user = User.query.filter_by(_id=request.form.get('user_id')).first()
-        
+        request_data = request.form
+        print(request_data)
         headers = {
             'Authorization': f'Bearer {qlik_cloud_api_key}',
             'Content-Type': 'application/json'
@@ -96,8 +97,9 @@ def create_tenant():
             if tenant not in user.tenants:
                 user.tenants.append(tenant)  # Add the tenant to the user's tenants
         db.session.commit()
+        tenant_id = tenant.id
         if response.status_code == 200:
-            return jsonify({"status": 200, "message": "Tenant created successfully"}), 200
+            return jsonify({"status": 200, "message": "Tenant created successfully", "tenant_id": tenant_id}), 200
         else:
             return jsonify({"status": response.status_code, "message": "API call was not successful"}), response.status_code
     return jsonify({"status": 400, "message": "Invalid request method"}), 400
@@ -227,231 +229,243 @@ def get_reload_task(task_id):
     return jsonify(task.to_dict())  # Assuming you have a to_dict() method in your ReloadTask model
 
 
-@main.route('/fetch_and_store_apps/<tenant_id>', methods=['POST'])
-def fetch_and_store_apps(tenant_id):
-    tenant = Tenant.query.get(tenant_id)
-    if not tenant:
-        return jsonify({"message": "Tenant not found"}), 404
-
-    headers = {
-        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
-        'Content-Type': 'application/json'
-    }
-
-    hostname = tenant.hostnames.split(',')[-1]
-    next_url = f"https://{hostname}/api/v1/apps"
-    while next_url:
-        response = requests.get(next_url, headers=headers)
-        if response.status_code != 200:
-            return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
-
-        response_data = response.json()
-        apps = response_data.get('data', [])
-        for app_data in apps:
-            attributes = app_data.get('attributes', {})
-            app = create_app_from_data(attributes)
-            app.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
-            db.session.merge(app)
-        db.session.commit()
-
-        next_link = response_data.get('links', {}).get('next')
-        next_url = next_link.get('href') if next_link else None
-
-    return jsonify({"message": "Apps fetched and stored successfully!"})
-
-@main.route('/fetch_and_store_users/<tenant_id>', methods=['POST'])
-def fetch_and_store_users(tenant_id):
-    tenant = Tenant.query.get(tenant_id)
-    if not tenant:
-        return jsonify({"message": "Tenant not found"}), 404
-
-    headers = {
-        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
-        'Content-Type': 'application/json'
-    }
-
-    hostname = tenant.hostnames.split(',')[-1]
-    next_url = f"https://{hostname}/api/v1/users"
-    while next_url:
-        response = requests.get(next_url, headers=headers)
-        if response.status_code != 200:
-            print(f"Failed API call with status {response.status_code}: {response.text}")
-            return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
-
-        try:
-            response_data = response.json()
-            users = response_data.get('data', [])
-            if not users:
-                print("No users found in the API response.")
-                return jsonify({"error": "No users found in the response from Qlik Cloud API"}), 500
-
-            for user_data in users:
-                user_id = user_data.get('id')
-                qlik_app_link = user_data.get('links', {}).get('self', {}).get('href')
-                attributes = {
-                    'name': user_data.get('name'),
-                    'email': user_data.get('email', 'N/A'),
-                    'tenantId': user_data.get('tenantId'),
-                    'status': user_data.get('status'),
-                    'created': user_data.get('created'),
-                    'lastUpdated': user_data.get('lastUpdated'),
-                    'qlik_app_link': qlik_app_link
-                }
-
-                # Check if user already exists
-                existing_user = QlikUser.query.get(user_id)
-                if not existing_user:
-                    existing_user = QlikUser(id=user_id)
-                    db.session.add(existing_user)
-
-                # Update the existing user's attributes
-                for key, value in attributes.items():
-                    setattr(existing_user, key, value)
-
-                # Manage user groups
-                for group_data in user_data.get('assignedGroups', []):
-                    group = AssignedGroup.query.get(group_data['id']) or AssignedGroup(id=group_data['id'], name=group_data['name'])
-                    existing_user.groups.append(group)
-                    db.session.merge(group)
-
-                # Manage user roles
-                for role_data in user_data.get('assignedRoles', []):
-                    role = AssignedRole.query.get(role_data['id']) or AssignedRole(
-                        id=role_data['id'],
-                        name=role_data['name'],
-                        type=role_data['type'],
-                        level=role_data['level'],
-                        permissions=",".join(role_data.get('permissions', []))
-                    )
-                    existing_user.roles.append(role)
-                    db.session.merge(role)
-
-            # Check if there's a next page to fetch
-            next_link = response_data.get('links', {}).get('next')
-            next_url = next_link.get('href') if next_link else None
-
-        except Exception as e:
-            print(f"Exception encountered: {str(e)}")
-            return jsonify({"error": str(e)}), 500
-
-    db.session.commit()
-    return jsonify({"message": "Users fetched and stored successfully!"})
-
-@main.route('/fetch_and_store_reload_tasks/<tenant_id>', methods=['POST'])
-def fetch_and_store_reload_tasks(tenant_id):
-    tenant = Tenant.query.get(tenant_id)
-    if not tenant:
-        return jsonify({"message": "Tenant not found"}), 404
-
-    headers = {
-        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
-        'Content-Type': 'application/json'
-    }
-
-    hostname = tenant.hostnames.split(',')[-1]
-    next_url = f"https://{hostname}/api/v1/reload-tasks"
-    while next_url:
-        response = requests.get(next_url, headers=headers)
-        if response.status_code != 200:
-            print(f"Failed API call with status {response.status_code}: {response.text}")
-            return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
-
-        try:
-            response_data = response.json()
-            tasks = response_data.get('data', [])
-            if not tasks:
-                print("No reload tasks found in the API response.")
-                return jsonify({"error": "No reload tasks found in the response from Qlik Cloud API"}), 500
-
-            for task_data in tasks:
-                task_id = task_data.get('id')
-                existing_task = ReloadTask.query.get(task_id)
-                if not existing_task:
-                    task = create_reload_task_from_data(task_data)
-                    db.session.add(task)
-                    existing_task = task  # Set existing_task to the newly created task
-                    existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
-                else:
-                    for key, value in task_data.items():
-                        if key == 'recurrence' and isinstance(value, str):  # Convert comma-separated string to list
-                            value = value.split(',')
-                        setattr(existing_task, key, value)
-
-                existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
-                
-                # Commit the changes to the database
-                db.session.commit()
-
-            # Check if there's a next page to fetch
-            next_link = response_data.get('links', {}).get('next')
-            next_url = next_link.get('href') if next_link else None
-
-        except Exception as e:
-            print(f"Exception encountered: {str(e)}")
-            return jsonify({"error": str(e)}), 500
-
-    return jsonify({"message": "Reload tasks fetched and stored successfully!"})
-
-@main.route('/update_reload_task/<task_id>', methods=['PUT'])
-def update_reload_task(task_id):
-    api_key = request.headers.get('X-API-Key')
-    user = User.query.filter_by(admin_dashboard_api_key=api_key).first()
-    if not user:
-        return jsonify({"message": "Invalid API key"}), 401
-
-    try:
-        data = request.json
-
-        # Ensure datetime strings are in the correct format or set to None if empty
-        if not data.get('endDateTime'):
-            data['endDateTime'] = None
-        else:
-            data['endDateTime'] = ensure_full_datetime_format(data['endDateTime'])
-
-        if not data.get('startDateTime'):
-            data['startDateTime'] = None
-        else:
-            data['startDateTime'] = ensure_full_datetime_format(data['startDateTime'])
-
-        # Log the request body for debugging
-        current_app.logger.info(f"Request body for task {task_id}: {data}")
-
-        task = ReloadTask.query.get(task_id)
-        if not task:
-            return jsonify({"message": "Task not found"}), 404
-
-        # Get the tenant associated with the task
-        tenant = Tenant.query.get(task.tenant_id)
+@main.route('/fetch_and_store_apps', methods=['GET', 'POST'])
+def fetch_and_store_apps():
+    if request.method == 'POST':
+        tenant_id = request.form.get('tenant_id')
+        tenant = Tenant.query.get(tenant_id)
         if not tenant:
             return jsonify({"message": "Tenant not found"}), 404
 
         headers = {
-        'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
-        'Content-Type': 'application/json'
+            'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
+            'Content-Type': 'application/json'
         }
-        
-        # Update local database
-        for key, value in data.items():
-            setattr(task, key, value)
-        db.session.commit()
-        
-        if not data['recurrence']:
-            # Option 2: Provide a default value (uncomment the line below if you want to use this option)
-            data['recurrence'] = None  # Replace DEFAULT_VALUE with a valid recurrence value
 
         hostname = tenant.hostnames.split(',')[-1]
-        QLIK_RELOAD_TASK_UPDATE_ENDPOINT = f"https://{hostname}/api/v1/reload-tasks/{task_id}"
-        response = requests.put(QLIK_RELOAD_TASK_UPDATE_ENDPOINT.format(task_id=task_id), headers=headers, json=data)
+        next_url = f"https://{hostname}/api/v1/apps"
+        while next_url:
+            response = requests.get(next_url, headers=headers)
+            if response.status_code != 200:
+                return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
 
-        if response.status_code != 200:
-            current_app.logger.error(f"Error updating task {task_id} in Qlik Cloud: {response.text}")
-            return jsonify({"message": f"Error updating task in Qlik Cloud: {response.text}"}), 500
+            response_data = response.json()
+            apps = response_data.get('data', [])
+            for app_data in apps:
+                attributes = app_data.get('attributes', {})
+                app = create_app_from_data(attributes)
+                app.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
+                db.session.merge(app)
+            db.session.commit()
 
-        # After successful update, return a JSON response with the URL to redirect to
-        return jsonify({"message": "Task updated successfully in both local database and Qlik Cloud!", "redirect_url": url_for('main.list_tasks')})
-    except Exception as e:
-        current_app.logger.error(f"Error updating task {task_id}: {str(e)}")  # Log the error
-        return jsonify({"message": f"Error: {str(e)}"}), 500
+            next_link = response_data.get('links', {}).get('next')
+            next_url = next_link.get('href') if next_link else None
+
+    return jsonify({"message": "Apps fetched and stored successfully!"}), 200
+
+@main.route('/fetch_and_store_users', methods=['GET', 'POST'])
+def fetch_and_store_users():
+    if request.method == 'POST':
+        tenant_id = request.form.get('tenant_id')
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            return jsonify({"message": "Tenant not found"}), 404
+
+        headers = {
+            'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        hostname = tenant.hostnames.split(',')[-1]
+        next_url = f"https://{hostname}/api/v1/users"
+        while next_url:
+            response = requests.get(next_url, headers=headers)
+            if response.status_code != 200:
+                print(f"Failed API call with status {response.status_code}: {response.text}")
+                return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
+
+            try:
+                response_data = response.json()
+                users = response_data.get('data', [])
+                if not users:
+                    print("No users found in the API response.")
+                    return jsonify({"error": "No users found in the response from Qlik Cloud API"}), 500
+
+                for user_data in users:
+                    user_id = user_data.get('id')
+                    qlik_app_link = user_data.get('links', {}).get('self', {}).get('href')
+                    attributes = {
+                        'name': user_data.get('name'),
+                        'email': user_data.get('email', 'N/A'),
+                        'tenantId': user_data.get('tenantId'),
+                        'status': user_data.get('status'),
+                        'created': user_data.get('created'),
+                        'lastUpdated': user_data.get('lastUpdated'),
+                        'qlik_app_link': qlik_app_link
+                    }
+
+                    # Check if user already exists
+                    existing_user = QlikUser.query.get(user_id)
+                    if not existing_user:
+                        existing_user = QlikUser(id=user_id)
+                        db.session.add(existing_user)
+
+                    # Update the existing user's attributes
+                    for key, value in attributes.items():
+                        setattr(existing_user, key, value)
+
+                    # Manage user groups
+                    for group_data in user_data.get('assignedGroups', []):
+                        group = AssignedGroup.query.get(group_data['id']) or AssignedGroup(id=group_data['id'], name=group_data['name'])
+                        existing_user.groups.append(group)
+                        db.session.merge(group)
+
+                    # Manage user roles
+                    for role_data in user_data.get('assignedRoles', []):
+                        role = AssignedRole.query.get(role_data['id']) or AssignedRole(
+                            id=role_data['id'],
+                            name=role_data['name'],
+                            type=role_data['type'],
+                            level=role_data['level'],
+                            permissions=",".join(role_data.get('permissions', []))
+                        )
+                        existing_user.roles.append(role)
+                        db.session.merge(role)
+
+                # Check if there's a next page to fetch
+                next_link = response_data.get('links', {}).get('next')
+                next_url = next_link.get('href') if next_link else None
+
+            except Exception as e:
+                print(f"Exception encountered: {str(e)}")
+                return jsonify({"error": str(e)}), 500
+
+        db.session.commit()
+    return jsonify({"message": "Users fetched and stored successfully!"})
+
+@main.route('/fetch_and_store_reload_tasks', methods=['GET', 'POST'])
+def fetch_and_store_reload_tasks():
+    if request.method == 'POST':
+        tenant_id = request.form.get('tenant_id')
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            return jsonify({"message": "Tenant not found"}), 404
+
+        headers = {
+            'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        hostname = tenant.hostnames.split(',')[-1]
+        next_url = f"https://{hostname}/api/v1/reload-tasks"
+        while next_url:
+            response = requests.get(next_url, headers=headers)
+            if response.status_code != 200:
+                print(f"Failed API call with status {response.status_code}: {response.text}")
+                return jsonify({"error": "Failed to fetch data from Qlik Cloud", "response": response.text}), 500
+
+            try:
+                response_data = response.json()
+                tasks = response_data.get('data', [])
+                # print("Task Data:", tasks)
+                if not tasks:
+                    print("No reload tasks found in the API response.")
+                    return jsonify({"error": "No reload tasks found in the response from Qlik Cloud API"}), 500
+
+                for task_data in tasks:
+                    task_id = task_data.get('id')
+                    existing_task = ReloadTask.query.get(task_id)
+                    if not existing_task:
+                        task = create_reload_task_from_data(task_data)
+                        db.session.add(task)
+                        existing_task = task  # Set existing_task to the newly created task
+                        existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
+                    else:
+                        for key, value in task_data.items():
+                            if key == 'recurrence' and isinstance(value, list):  # Convert list to comma-separated string
+                                value = ', '.join(value)
+                            setattr(existing_task, key, value)
+
+                    existing_task.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
+                    
+                    # Commit the changes to the database
+                    db.session.commit()
+
+                # Check if there's a next page to fetch
+                next_link = response_data.get('links', {}).get('next')
+                next_url = next_link.get('href') if next_link else None
+
+            except Exception as e:
+                print(f"Exception encountered: {str(e)}")
+                return jsonify({"error": str(e)}), 500
+
+    return jsonify({"message": "Reload tasks fetched and stored successfully!"})
+
+@main.route('/update_reload_task', methods=['POST'])
+def update_reload_task():
+    if request.method == 'POST':
+        tenant_id = request.form.get('tenant_id')
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            return jsonify({"message": "Tenant not found"}), 404
+
+        try:
+            data = request.json
+            
+            task_id = data.get('task_id')
+
+            # Ensure datetime strings are in the correct format or set to None if empty
+            if not data.get('endDateTime'):
+                data['endDateTime'] = None
+            else:
+                data['endDateTime'] = ensure_full_datetime_format(data['endDateTime'])
+
+            if not data.get('startDateTime'):
+                data['startDateTime'] = None
+            else:
+                data['startDateTime'] = ensure_full_datetime_format(data['startDateTime'])
+
+            # Log the request body for debugging
+            current_app.logger.info(f"Request body for task {task_id}: {data}")
+
+            task = ReloadTask.query.get(task_id)
+            if not task:
+                return jsonify({"message": "Task not found"}), 404
+
+            # Get the tenant associated with the task
+            tenant = Tenant.query.get(task.tenant_id)
+            if not tenant:
+                return jsonify({"message": "Tenant not found"}), 404
+
+            headers = {
+            'Authorization': f'Bearer {tenant.qlik_cloud_api_key}',
+            'Content-Type': 'application/json'
+            }
+            
+            # Update local database
+            for key, value in data.items():
+                if key == 'recurrence' and isinstance(value, list):  # Convert list to comma-separated string
+                    value = ', '.join(value)
+                setattr(task, key, value)
+            db.session.commit()
+            
+            if not data['recurrence']:
+                # Option 2: Provide a default value (uncomment the line below if you want to use this option)
+                data['recurrence'] = None  # Replace DEFAULT_VALUE with a valid recurrence value
+
+            hostname = tenant.hostnames.split(',')[-1]
+            QLIK_RELOAD_TASK_UPDATE_ENDPOINT = f"https://{hostname}/api/v1/reload-tasks/{task_id}"
+            response = requests.put(QLIK_RELOAD_TASK_UPDATE_ENDPOINT.format(task_id=task_id), headers=headers, json=data)
+
+            if response.status_code != 200:
+                current_app.logger.error(f"Error updating task {task_id} in Qlik Cloud: {response.text}")
+                return jsonify({"message": f"Error updating task in Qlik Cloud: {response.text}"}), 500
+
+            # After successful update, return a JSON response with the URL to redirect to
+            return jsonify({"message": "Task updated successfully in both local database and Qlik Cloud!"}), 200
+        except Exception as e:
+            current_app.logger.error(f"Error updating task {task_id}: {str(e)}")  # Log the error
+            return jsonify({"message": f"Error: {str(e)}"}), 500
 
 def ensure_full_datetime_format(dt_str):
     """Ensure the datetime string is in the format 'YYYY-MM-DDTHH:MM:SS'."""
@@ -566,13 +580,17 @@ def create_qlik_user_from_data(user_id, attributes, qlik_app_link):
     )
     
 def create_reload_task_from_data(attributes):
+    recurrence = attributes.get('recurrence')
+    # If recurrence is a list, join all elements into a single string
+    if isinstance(recurrence, list):
+        recurrence = ';'.join(recurrence)
     return ReloadTask(
         id=attributes.get('id'),
         appId=attributes.get('appId'),
         partial=attributes.get('partial'),
         timeZone=attributes.get('timeZone'),
         autoReload=attributes.get('autoReload'),
-        recurrence=attributes.get('recurrence', []),
+        recurrence=recurrence,
         endDateTime=attributes.get('endDateTime'),
         startDateTime=attributes.get('startDateTime'),
         autoReloadPartial=attributes.get('autoReloadPartial'),

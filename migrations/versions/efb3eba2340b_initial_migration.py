@@ -1,8 +1,8 @@
 """Initial migration.
 
-Revision ID: edf1aa11c310
+Revision ID: efb3eba2340b
 Revises: 
-Create Date: 2023-08-25 12:48:34.423784
+Create Date: 2023-08-29 14:01:36.630322
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'edf1aa11c310'
+revision = 'efb3eba2340b'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -98,7 +98,7 @@ def upgrade():
     sa.Column('partial', sa.Boolean(), nullable=True),
     sa.Column('timeZone', sa.String(length=255), nullable=True),
     sa.Column('autoReload', sa.Boolean(), nullable=True),
-    sa.Column('recurrence', sa.PickleType(), nullable=True),
+    sa.Column('recurrence', sa.String(length=1000), nullable=True),
     sa.Column('endDateTime', sa.DateTime(), nullable=True),
     sa.Column('startDateTime', sa.DateTime(), nullable=True),
     sa.Column('autoReloadPartial', sa.Boolean(), nullable=True),

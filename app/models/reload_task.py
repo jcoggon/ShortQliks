@@ -6,7 +6,7 @@ class ReloadTask(db.Model):
     partial = db.Column(db.Boolean, default=False)
     timeZone = db.Column(db.String(255))
     autoReload = db.Column(db.Boolean, default=False)
-    recurrence = db.Column(db.PickleType)  # Use PickleType to store a list
+    recurrence = db.Column(db.String(1000))  # Use PickleType to store a list
     endDateTime = db.Column(db.DateTime, nullable=True)
     startDateTime = db.Column(db.DateTime, nullable=True)
     autoReloadPartial = db.Column(db.Boolean, default=False)
@@ -27,7 +27,7 @@ class ReloadTask(db.Model):
             'partial': self.partial,
             'timeZone': self.timeZone,
             'autoReload': self.autoReload,
-            'recurrence': self.recurrence if self.recurrence else [],
+            'recurrence': self.recurrence if self.recurrence else "",
             'endDateTime': self.endDateTime.strftime('%Y-%m-%dT%H:%M:%S') if self.endDateTime else None,
             'startDateTime': self.startDateTime.strftime('%Y-%m-%dT%H:%M:%S') if self.startDateTime else None,
             'autoReloadPartial': self.autoReloadPartial,
