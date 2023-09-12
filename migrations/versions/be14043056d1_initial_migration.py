@@ -1,8 +1,8 @@
 """Initial migration.
 
-Revision ID: efb3eba2340b
+Revision ID: be14043056d1
 Revises: 
-Create Date: 2023-08-29 14:01:36.630322
+Create Date: 2023-09-10 16:00:26.896085
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'efb3eba2340b'
+revision = 'be14043056d1'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -29,6 +29,17 @@ def upgrade():
     sa.Column('type', sa.String(length=255), nullable=True),
     sa.Column('level', sa.String(length=255), nullable=True),
     sa.Column('permissions', sa.String(length=255), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('qlik_space',
+    sa.Column('id', sa.String(length=255), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=True),
+    sa.Column('type', sa.String(length=255), nullable=True),
+    sa.Column('owner_id', sa.String(length=255), nullable=True),
+    sa.Column('tenant_id', sa.String(length=255), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.Column('description', sa.Text(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('qlik_user',
@@ -146,6 +157,7 @@ def downgrade():
     op.drop_table('user')
     op.drop_table('tenant')
     op.drop_table('qlik_user')
+    op.drop_table('qlik_space')
     op.drop_table('assigned_role')
     op.drop_table('assigned_group')
     # ### end Alembic commands ###
