@@ -1,6 +1,6 @@
+from fastapi import APIRouter
 
-from flask import Blueprint
+router = APIRouter()
 
-main = Blueprint('main', __name__, template_folder='templates', static_folder='static')
-
-from . import routes
+# Import routes here
+# from . import routes

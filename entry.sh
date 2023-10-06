@@ -5,8 +5,8 @@ while ! nc -z postgres 5432; do
   sleep 1
 done
 
-# Check if tables exist and create them if they don't
-flask db upgrade
+# Apply database migrations
+alembic upgrade head
 
-# Run the Flask application
-flask run --host=0.0.0.0
+# Run the FastAPI application using uvicorn
+uvicorn app:app --host 0.0.0.0 --port 5000

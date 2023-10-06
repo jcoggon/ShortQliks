@@ -6,3 +6,10 @@ Flask-Migrate==2.7.0
 Flask-Testing
 itsdangerous
 werkzeug
+fastapi
+pydantic
+uvicorn
+passlib
+asyncpg
+alembic
+python-multipart
