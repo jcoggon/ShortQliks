@@ -1,21 +1,45 @@
-# app/models/tenant.py
-
-from app import db
-from app.models.associations import user_tenants
+from sqlalchemy import Column, String, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
 
-class Tenant(db.Model):
-    id = db.Column(db.String, primary_key=True)
-    name = db.Column(db.String(255), nullable=True)
-    hostnames = db.Column(db.String(500), nullable=True)
-    createdByUser = db.Column(db.String(255), nullable=True)
-    datacenter = db.Column(db.String(255), nullable=True)
-    created = db.Column(db.String(255), nullable=True)
-    lastUpdated = db.Column(db.String(255), nullable=True)
-    status = db.Column(db.String(255), nullable=True)
-    autoAssignCreateSharedSpacesRoleToProfessionals = db.Column(db.Boolean, nullable=True)
-    autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals = db.Column(db.Boolean, nullable=True)
-    autoAssignDataServicesContributorRoleToProfessionals = db.Column(db.Boolean, nullable=True)
-    enableAnalyticCreation = db.Column(db.Boolean, nullable=True)
-    qlik_cloud_api_key = db.Column(db.String(500))
-    users = db.relationship('User', secondary=user_tenants, overlaps="tenants")
+Base = declarative_base()
+
+# Assuming user_tenants association table is already defined
+
+# SQLAlchemy model for database interaction
+class Tenant(Base):
+    __tablename__ = 'tenant'
+    
+    id = Column(String, primary_key=True)
+    name = Column(String)
+    hostnames = Column(String)
+    createdByUser = Column(String)
+    datacenter = Column(String)
+    created = Column(String)
+    lastUpdated = Column(String)
+    status = Column(String)
+    autoAssignCreateSharedSpacesRoleToProfessionals = Column(Boolean)
+    autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals = Column(Boolean)
+    autoAssignDataServicesContributorRoleToProfessionals = Column(Boolean)
+    enableAnalyticCreation = Column(Boolean)
+    qlik_cloud_api_key = Column(String)
+    users = relationship('User', secondary='user_tenants')  # Assuming the table name as a string
+
+# Pydantic models for request and response
+class TenantCreate(BaseModel):
+    name: str
+    hostnames: str
+    createdByUser: str
+    datacenter: str
+    created: str
+    lastUpdated: str
+    status: str
+    autoAssignCreateSharedSpacesRoleToProfessionals: bool
+    autoAssignPrivateAnalyticsContentCreatorRoleToProfessionals: bool
+    autoAssignDataServicesContributorRoleToProfessionals: bool
+    enableAnalyticCreation: bool
+    qlik_cloud_api_key: str
+
+class TenantResponse(TenantCreate):
+    id: str

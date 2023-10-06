@@ -1,43 +1,51 @@
-from app import db
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
 
-class ReloadTask(db.Model):
-    id = db.Column(db.String(255), primary_key=True)
-    appId = db.Column(db.String(255), nullable=False)
-    partial = db.Column(db.Boolean, default=False)
-    timeZone = db.Column(db.String(255))
-    autoReload = db.Column(db.Boolean, default=False)
-    recurrence = db.Column(db.String(1000))  # Use PickleType to store a list
-    endDateTime = db.Column(db.DateTime, nullable=True)
-    startDateTime = db.Column(db.DateTime, nullable=True)
-    autoReloadPartial = db.Column(db.Boolean, default=False)
-    log = db.Column(db.Text)
-    state = db.Column(db.String(255))
-    userId = db.Column(db.String(255), nullable=False)
-    spaceId = db.Column(db.String(255), nullable=True)
-    tenantId = db.Column(db.String(255), nullable=True)
-    fortressId = db.Column(db.String(255), nullable=True)
-    lastExecutionTime = db.Column(db.DateTime, nullable=True)
-    nextExecutionTime = db.Column(db.DateTime, nullable=True)
-    tenant_id = db.Column(db.String, db.ForeignKey('tenant.id'))  # Add this line
+Base = declarative_base()
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'appId': self.appId,
-            'partial': self.partial,
-            'timeZone': self.timeZone,
-            'autoReload': self.autoReload,
-            'recurrence': self.recurrence if self.recurrence else "",
-            'endDateTime': self.endDateTime.strftime('%Y-%m-%dT%H:%M:%S') if self.endDateTime else None,
-            'startDateTime': self.startDateTime.strftime('%Y-%m-%dT%H:%M:%S') if self.startDateTime else None,
-            'autoReloadPartial': self.autoReloadPartial,
-            'log': self.log,
-            'state': self.state,
-            'userId': self.userId,
-            'spaceId': self.spaceId,
-            'tenantId': self.tenantId,
-            'fortressId': self.fortressId,
-            'lastExecutionTime': self.lastExecutionTime.strftime('%Y-%m-%dT%H:%M:%S') if self.lastExecutionTime else None,
-            'nextExecutionTime': self.nextExecutionTime.strftime('%Y-%m-%dT%H:%M:%S') if self.nextExecutionTime else None,
-            'tenant_id': self.tenant_id
-        }
+# SQLAlchemy model for database interaction
+class ReloadTask(Base):
+    __tablename__ = 'reload_task'
+    
+    id = Column(String, primary_key=True)
+    appId = Column(String, nullable=False)
+    partial = Column(Boolean, default=False)
+    timeZone = Column(String)
+    autoReload = Column(Boolean, default=False)
+    recurrence = Column(String)  # Use PickleType to store a list, if needed
+    endDateTime = Column(DateTime)
+    startDateTime = Column(DateTime)
+    autoReloadPartial = Column(Boolean, default=False)
+    log = Column(Text)
+    state = Column(String)
+    userId = Column(String, nullable=False)
+    spaceId = Column(String)
+    tenantId = Column(String)
+    fortressId = Column(String)
+    lastExecutionTime = Column(DateTime)
+    nextExecutionTime = Column(DateTime)
+    tenant_id = Column(String, ForeignKey('tenant.id'))
+
+# Pydantic models for request and response
+class ReloadTaskCreate(BaseModel):
+    appId: str
+    partial: bool
+    timeZone: str
+    autoReload: bool
+    recurrence: str  # Type can be adjusted based on needs
+    endDateTime: str  # Assuming datetime will be passed as a string
+    startDateTime: str  # Assuming datetime will be passed as a string
+    autoReloadPartial: bool
+    log: str
+    state: str
+    userId: str
+    spaceId: str
+    tenantId: str
+    fortressId: str
+    lastExecutionTime: str  # Assuming datetime will be passed as a string
+    nextExecutionTime: str  # Assuming datetime will be passed as a string
+    tenant_id: str
+
+class ReloadTaskResponse(ReloadTaskCreate):
+    id: str

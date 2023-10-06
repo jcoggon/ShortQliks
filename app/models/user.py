@@ -1,18 +1,26 @@
-# app/models/user.py
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
+from passlib.context import CryptContext
 
-from app import db
-from app.models.associations import user_tenants
-from werkzeug.security import generate_password_hash, check_password_hash
+Base = declarative_base()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    _id = db.Column(db.String(255), nullable=True)
-    fullname = db.Column(db.String(255), nullable=True)
-    email = db.Column(db.String(255), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
-    qlik_cloud_tenant_url = db.Column(db.String(255), nullable=True)
-    admin_dashboard_api_key = db.Column(db.String(500), unique=True, nullable=True)
-    tenants = db.relationship('Tenant', secondary=user_tenants, overlaps="users")
+# Assuming user_tenants association table is already defined
+
+# SQLAlchemy model for database interaction
+class User(Base):
+    __tablename__ = 'user'
+    
+    id = Column(Integer, primary_key=True)
+    _id = Column(String)
+    fullname = Column(String)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String)
+    qlik_cloud_tenant_url = Column(String)
+    admin_dashboard_api_key = Column(String, unique=True)
+    tenants = relationship('Tenant', secondary='user_tenants')  # Assuming the table name as a string
 
     @property
     def password(self):
@@ -20,7 +28,19 @@ class User(db.Model):
 
     @password.setter
     def password(self, password):
-        self.password_hash = generate_password_hash(password)
+        self.password_hash = pwd_context.hash(password)
 
     def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+        return pwd_context.verify(password, self.password_hash)
+
+# Pydantic models for request and response
+class UserCreate(BaseModel):
+    _id: str
+    fullname: str
+    email: str
+    password: str
+    qlik_cloud_tenant_url: str
+    admin_dashboard_api_key: str
+
+class UserResponse(UserCreate):
+    id: int

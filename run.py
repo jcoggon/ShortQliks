@@ -1,8 +1,5 @@
-from app import create_app
-import logging
-
-app = create_app()
+from app import app  # Adjust the import path based on your project structure
 
 if __name__ == '__main__':
-    app.logger.setLevel(logging.INFO)
-    app.run()
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=5000)
