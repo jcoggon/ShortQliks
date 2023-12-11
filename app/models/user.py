@@ -1,26 +1,24 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from app import Base  # Correct import for the base class
 from pydantic import BaseModel
 from passlib.context import CryptContext
+from passlib.hash import sha256_crypt
 
-Base = declarative_base()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# Assuming user_tenants association table is already defined
+pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 # SQLAlchemy model for database interaction
 class User(Base):
-    __tablename__ = 'user'
+    __tablename__ = 'user'  # Consider pluralizing table names
     
     id = Column(Integer, primary_key=True)
-    _id = Column(String)
+    user_id = Column(String)
     fullname = Column(String)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String)
     qlik_cloud_tenant_url = Column(String)
     admin_dashboard_api_key = Column(String, unique=True)
-    tenants = relationship('Tenant', secondary='user_tenants')  # Assuming the table name as a string
+    tenants = relationship("Tenant", secondary="user_tenants")  # Ensure 'Tenant' is defined and 'user_tenants' exists
 
     @property
     def password(self):
@@ -28,14 +26,14 @@ class User(Base):
 
     @password.setter
     def password(self, password):
-        self.password_hash = pwd_context.hash(password)
+        self.password_hash = sha256_crypt.hash(password)
 
     def check_password(self, password):
-        return pwd_context.verify(password, self.password_hash)
+        return sha256_crypt.verify(password, self.password_hash)
 
 # Pydantic models for request and response
 class UserCreate(BaseModel):
-    _id: str
+    user_id: str
     fullname: str
     email: str
     password: str

@@ -1,18 +1,30 @@
-from fastapi import Request, HTTPException, Form, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Depends, Form
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker, selectinload
+from sqlalchemy import select
 from app.models.user import User
 from app.models.tenant import Tenant
-from app import SessionLocal
-from app.main.routes import router
+from app import engine  # Ensure this is your async-compatible engine
+import httpx
+
+router = APIRouter()
+
+# Async session local
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
 
 @router.post('/create_tenant')
 async def create_tenant(
     qlik_cloud_url: str = Form(...),
     qlik_cloud_api_key: str = Form(...),
-    user_id: int = Form(...),
-    db: Session = Depends(SessionLocal)
+    user_id: str = Form(...),
+    db: AsyncSession = Depends(get_db)
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).options(selectinload(User.tenants)).where(User.user_id == user_id))
+    user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -21,27 +33,28 @@ async def create_tenant(
         'Content-Type': 'application/json'
     }
 
-    response = Request.get(f"https://{qlik_cloud_url}/api/v1/tenants", headers=headers)
-    response_data = response.json()
-    tenants = response_data.get('data', [])
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://{qlik_cloud_url}/api/v1/tenants", headers=headers)
+        if response.status_code != 200:
+            return {"status": response.status_code, "message": "API call was not successful"}
 
-    for tenant_data in tenants:
-        tenant_data['qlik_cloud_api_key'] = qlik_cloud_api_key
-        tenant = create_tenant_from_data(tenant_data, db)
-        # Check if the association already exists
-        if tenant not in user.tenants:
-            user.tenants.append(tenant)  # Add the tenant to the user's tenants
+        response_data = response.json()
+        tenants = response_data.get('data', [])
 
-    db.commit()
-    tenant_id = tenant.id
+        for tenant_data in tenants:
+            tenant_data['qlik_cloud_api_key'] = qlik_cloud_api_key
+            tenant = await create_tenant_from_data(tenant_data, db)
+            if not any(t.id == tenant.id for t in user.tenants):
+                user.tenants.append(tenant)
 
-    if response.status_code == 200:
-        return {"status": 200, "message": "Tenant created successfully", "tenant_id": tenant_id}
+        await db.commit()
+        tenant_id = tenant.id
 
-    return {"status": response.status_code, "message": "API call was not successful"}
+    return {"status": 200, "message": "Tenant created successfully", "tenant_id": tenant_id}
 
-def create_tenant_from_data(tenant_data, db):
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_data.get('id')).first()
+async def create_tenant_from_data(tenant_data, db: AsyncSession):
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_data.get('id')))
+    tenant = result.scalars().first()
     if tenant is None:
         tenant = Tenant(
             id=tenant_data.get('id'),
@@ -71,4 +84,6 @@ def create_tenant_from_data(tenant_data, db):
         tenant.autoAssignDataServicesContributorRoleToProfessionals = tenant_data.get('autoAssignDataServicesContributorRoleToProfessionals')
         tenant.enableAnalyticCreation = tenant_data.get('enableAnalyticCreation')
         tenant.qlik_cloud_api_key = tenant_data.get('qlik_cloud_api_key')
+    db.add(tenant)
+    await db.flush()
     return tenant

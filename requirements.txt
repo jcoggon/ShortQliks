@@ -1,9 +1,5 @@
-Flask
-Flask-SQLAlchemy
 psycopg2-binary
 requests
-Flask-Migrate==2.7.0
-Flask-Testing
 itsdangerous
 werkzeug
 fastapi
@@ -13,3 +9,5 @@ passlib
 asyncpg
 alembic
 python-multipart
+httpx
+bcrypt

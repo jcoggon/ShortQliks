@@ -2,8 +2,8 @@ from sqlalchemy import Column, String, DateTime, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
-
-Base = declarative_base()
+from app import Base
+# Base = declarative_base()
 
 # SQLAlchemy model for database interaction
 class QlikSpace(Base):

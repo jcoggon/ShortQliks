@@ -2,8 +2,8 @@ from sqlalchemy import Column, String, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
-
-Base = declarative_base()
+from app import Base
+# Base = declarative_base()
 
 # Assuming user_tenants association table is already defined
 
@@ -24,7 +24,7 @@ class Tenant(Base):
     autoAssignDataServicesContributorRoleToProfessionals = Column(Boolean)
     enableAnalyticCreation = Column(Boolean)
     qlik_cloud_api_key = Column(String)
-    users = relationship('User', secondary='user_tenants')  # Assuming the table name as a string
+    users = relationship('User', secondary='user_tenants', overlaps='tenants')  # Assuming the table name as a string
 
 # Pydantic models for request and response
 class TenantCreate(BaseModel):

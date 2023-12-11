@@ -2,8 +2,21 @@ from sqlalchemy import Column, String, DateTime, Table, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel
+from app import Base
+# Base = declarative_base()
 
-Base = declarative_base()
+# Association tables
+user_group_association = Table('user_group_association',
+                               Base.metadata,
+                               Column('user_id', String, ForeignKey('qlik_user.id')),
+                               Column('group_id', String, ForeignKey('assigned_group.id'))
+                               )
+
+user_role_association = Table('user_role_association',
+                              Base.metadata,
+                              Column('user_id', String, ForeignKey('qlik_user.id')),
+                              Column('role_id', String, ForeignKey('assigned_role.id'))
+                              )
 
 # SQLAlchemy models for database interaction
 class QlikUser(Base):
@@ -23,6 +36,7 @@ class AssignedGroup(Base):
     
     id = Column(String, primary_key=True)
     name = Column(String)
+    users = relationship('QlikUser', secondary=user_group_association, back_populates='groups')
 
 class AssignedRole(Base):
     __tablename__ = 'assigned_role'
@@ -32,19 +46,7 @@ class AssignedRole(Base):
     type = Column(String)
     level = Column(String)
     permissions = Column(String)  # Assuming permissions are stored as comma-separated values
-
-# Association tables
-user_group_association = Table('user_group_association',
-                               Base.metadata,
-                               Column('user_id', String, ForeignKey('qlik_user.id')),
-                               Column('group_id', String, ForeignKey('assigned_group.id'))
-                               )
-
-user_role_association = Table('user_role_association',
-                              Base.metadata,
-                              Column('user_id', String, ForeignKey('qlik_user.id')),
-                              Column('role_id', String, ForeignKey('assigned_role.id'))
-                              )
+    users = relationship('QlikUser', secondary=user_role_association, back_populates='roles')
 
 # Relationships
 QlikUser.groups = relationship('AssignedGroup', secondary=user_group_association, back_populates='users')

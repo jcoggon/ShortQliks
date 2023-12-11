@@ -1,8 +1,8 @@
 from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel
-
-Base = declarative_base()
+from app import Base
+# Base = declarative_base()
 
 # SQLAlchemy model for database interaction
 class ReloadTask(Base):

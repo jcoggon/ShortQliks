@@ -11,21 +11,22 @@ from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from config import Config
 from app import SessionLocal
 from app.main.logging_config import logger
-from app.main.routes import router
+# from app.main.routes import router
 
+router = APIRouter()
 
 @router.post('/signup')
 async def signup(
-    _id: str = Form(...),
+    user_id: str = Form(...),
     fullname: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
     qlik_cloud_tenant_url: str = Form(...),
-    qlik_cloud_api_key: str = Form(...)
+    qlik_cloud_api_key: str = Form(...),
+    db: Session = Depends(SessionLocal)
 ):
-    db = SessionLocal()
     try:
-        user = create_user_from_data(db, _id, fullname, email, password, qlik_cloud_tenant_url)
+        user = create_user_from_data(db, user_id, fullname, email, password, qlik_cloud_tenant_url)
         qlik_cloud_api_key = qlik_cloud_api_key  # Not sure if this line is needed
 
         # Add the user to the session and commit to get the user.id
@@ -75,9 +76,9 @@ def check_tenant(db, user, qlik_cloud_api_key):
     db.commit()
     return response.status_code == 200  # Return True if the API call was successful, False otherwise
 
-def create_user_from_data(db, _id, fullname, email, password, qlik_cloud_tenant_url):
+def create_user_from_data(db, user_id, fullname, email, password, qlik_cloud_tenant_url):
     return User(
-        _id=_id,
+        user_id=user_id,
         fullname=fullname,
         email=email,
         password=password,
