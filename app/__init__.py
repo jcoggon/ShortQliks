@@ -63,6 +63,9 @@ from app.main.user_routes.create_tenant_routes import router as create_tenant_ro
 from app.main.user_routes.signup_routes import router as signup_router
 from app.main.user_routes.onboard_routes import router as onboard_router
 from app.main.qlik_routes.fetch_and_store_apps_routes import router as app_store_router
+from app.main.qlik_routes.fetch_and_store_spaces_routes import router as space_store_router
+from app.main.qlik_routes.fetch_and_store_users_routes import router as user_store_router
+from app.main.qlik_routes.fetch_and_store_reload_tasks_routes import router as reload_tasks_router
 
 app.include_router(main_router)
 app.include_router(app_search_router, prefix="/api", tags=["App Search"])
@@ -70,3 +73,6 @@ app.include_router(create_tenant_router, prefix="/api", tags=["Create Tenant"])
 app.include_router(signup_router, prefix="/api", tags=["Signup User"])
 app.include_router(onboard_router, prefix="/api", tags=["Onboard User"])
 app.include_router(app_store_router, prefix="/api", tags=["Store Apps"])
+app.include_router(space_store_router, prefix="/api", tags=["Store Spaces"])
+app.include_router(user_store_router, prefix="/api", tags=["Store Users"])
+app.include_router(reload_tasks_router, prefix="/api", tags=["Store Reload Tasks"])

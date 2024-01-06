@@ -11,3 +11,4 @@ alembic
 python-multipart
 httpx
 bcrypt
+python-dateutil

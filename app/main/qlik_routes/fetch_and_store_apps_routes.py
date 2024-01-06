@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Form
+from fastapi import APIRouter, HTTPException, Depends, Body
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
@@ -12,13 +13,26 @@ router = APIRouter()
 # Async session local
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+class TenantId(BaseModel):
+    tenant_id: str = Field(..., description="The ID of the tenant.")
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
-@router.post("/fetch_and_store_apps")
-async def fetch_and_store_apps(tenant_id: str = Form(...), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+@router.post("/fetch_and_store_apps", response_description="The status of fetching and storing apps.")
+async def fetch_and_store_apps(tenant_id: TenantId = Body(...), db: AsyncSession = Depends(get_db)):
+    """
+    Fetches Qlik apps for a tenant and stores them in the database.
+    Takes a tenant ID, fetches apps via Qlik Cloud API, and stores them. 
+    If tenant ID is not found, an HTTPException is raised.
+    Args:
+        tenant_id (TenantId): A model with a 'tenant_id' field.
+    Returns:
+        dict: Status of the operation.
+    """
+    tenant_id_str = tenant_id.tenant_id  # Extract the tenant_id string
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id_str))  # Use the tenant_id string
     tenant = result.scalars().first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
@@ -47,10 +61,23 @@ async def fetch_and_store_apps(tenant_id: str = Form(...), db: AsyncSession = De
             apps = response_data.get('data', [])
             for app_data in apps:
                 attributes = app_data.get('attributes', {})
-                app = create_app_from_data(attributes)
-                app.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
-                db.add(app)
-            await db.commit()
+                app_id = attributes.get('id')
+
+                # Check if app already exists
+                result = await db.execute(select(QlikApp).where(QlikApp.id == app_id))
+                existing_app = result.scalars().first()
+
+                if existing_app:
+                    # Update the existing app's attributes
+                    for key, value in attributes.items():
+                        setattr(existing_app, key, value)
+                else:
+                    # Create a new app
+                    existing_app = create_app_from_data(attributes)
+                    existing_app.tenant_id = tenant.id  # Set the tenant_id field to the ID of the tenant
+                    db.add(existing_app)
+
+                await db.commit()
 
             next_link = response_data.get('links', {}).get('next')
             next_url = next_link.get('href') if next_link else None
