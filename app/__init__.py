@@ -34,7 +34,7 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     # Close the database connection pool when the application shuts down
-    await engine.disconnect()
+    pass
     
 @app.exception_handler(ValidationError)
 async def handler1(request: Request, exc: Exception):
@@ -66,6 +66,8 @@ from app.main.qlik_routes.fetch_and_store_apps_routes import router as app_store
 from app.main.qlik_routes.fetch_and_store_spaces_routes import router as space_store_router
 from app.main.qlik_routes.fetch_and_store_users_routes import router as user_store_router
 from app.main.qlik_routes.fetch_and_store_reload_tasks_routes import router as reload_tasks_router
+from app.main.user_routes.fetch_apps import router as fetch_apps_router
+from app.main.qlik_routes.fetch_and_store_items_routes import router as fetch_items_router
 
 app.include_router(main_router)
 app.include_router(app_search_router, prefix="/api", tags=["App Search"])
@@ -76,3 +78,5 @@ app.include_router(app_store_router, prefix="/api", tags=["Store Apps"])
 app.include_router(space_store_router, prefix="/api", tags=["Store Spaces"])
 app.include_router(user_store_router, prefix="/api", tags=["Store Users"])
 app.include_router(reload_tasks_router, prefix="/api", tags=["Store Reload Tasks"])
+app.include_router(fetch_apps_router, prefix="/api", tags=["Fetch Apps"])
+app.include_router(fetch_items_router, prefix="/api", tags=["Fetch Items"])
